@@ -1,33 +1,48 @@
 import streamlit as st
+from supabase import create_client
 from groq import Groq
 
-# Configuration de l'app
-st.set_page_config(page_title="Claire", page_icon="⚡")
+# 1. Configuration des connexions
+supabase_url = st.secrets["SUPABASE_URL"]
+supabase_key = st.secrets["SUPABASE_KEY"]
+supabase = create_client(supabase_url, supabase_key)
+
+groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+
 st.title("Claire")
 
-# Ton API Key ici
-client = Groq(api_key="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")
+# 2. Fonction pour sauvegarder dans Supabase
+def save_message(user_msg, ai_msg):
+    data = {"user_message": user_msg, "ai_response": ai_msg}
+    supabase.table("chat_history").insert(data).execute()
 
-# Initialisation du chat
+# 3. Initialisation de l'historique de chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Affichage des anciens messages
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# 4. Affichage des messages précédents
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-# Entrée utilisateur
-if prompt := st.chat_input("Que faire ?"):
+# 5. Gestion de la saisie utilisateur et réponse de Groq
+if prompt := st.chat_input("Dis quelque chose à Claire..."):
+    # Afficher le message utilisateur
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Réponse de l'IA
+    # Appeler l'API Groq
+    chat_completion = groq_client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.1-8b-instant",
+    )
+    ai_response = chat_completion.choices[0].message.content
+
+    # SAUVEGARDER DANS LA BASE DE DONNÉES
+    save_message(prompt, ai_response)
+
+    # Afficher la réponse de l'IA
     with st.chat_message("assistant"):
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=st.session_state.messages
-        ).choices[0].message.content
-        st.markdown(response)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.markdown(ai_response)
+    st.session_state.messages.append({"role": "assistant", "content": ai_response})
